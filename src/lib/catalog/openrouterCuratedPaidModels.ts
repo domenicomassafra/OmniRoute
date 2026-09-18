@@ -3,6 +3,9 @@ import { z } from "zod";
 const OPENROUTER_MODEL_DETAIL_BASE_URL = "https://openrouter.ai/api/v1/model";
 
 export const OPENROUTER_CURATED_PAID_POINT_MODEL_IDS = ["~typesafe/jev-latest"] as const;
+const OPENROUTER_CURATED_PAID_POINT_MODEL_ID_SET = new Set<string>(
+  OPENROUTER_CURATED_PAID_POINT_MODEL_IDS
+);
 
 export type OpenRouterCatalogModel = {
   id: string;
@@ -50,6 +53,28 @@ function parsePointModel(payload: unknown, expectedId: string): OpenRouterCatalo
   const parsed = pointModelSchema.safeParse(data);
   if (!parsed.success || parsed.data.id !== expectedId) return null;
   return parsed.data as OpenRouterCatalogModel;
+}
+
+export function isOpenRouterCuratedPaidPointModelId(modelId: unknown): modelId is string {
+  return typeof modelId === "string" && OPENROUTER_CURATED_PAID_POINT_MODEL_ID_SET.has(modelId);
+}
+
+/**
+ * Keep the normal free-only decision intact while admitting the tiny,
+ * explicitly-curated OpenRouter paid exception set during model sync.
+ */
+export function mergeOpenRouterCuratedPaidModelsIntoImport<T extends { id?: string }>(
+  selectedModels: readonly T[],
+  allFetchedModels: readonly T[]
+): T[] {
+  const merged = [...selectedModels];
+  const seen = new Set(merged.map((model) => model.id).filter((id): id is string => Boolean(id)));
+  for (const model of allFetchedModels) {
+    if (!isOpenRouterCuratedPaidPointModelId(model.id) || seen.has(model.id)) continue;
+    merged.push(model);
+    seen.add(model.id);
+  }
+  return merged;
 }
 
 /**

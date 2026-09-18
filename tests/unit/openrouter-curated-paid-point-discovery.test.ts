@@ -5,6 +5,7 @@ const {
   buildOpenRouterPointModelUrl,
   enrichOpenRouterCatalogWithCuratedPaidPointModels,
   OPENROUTER_CURATED_PAID_POINT_MODEL_IDS,
+  mergeOpenRouterCuratedPaidModelsIntoImport,
 } = await import("../../src/lib/catalog/openrouterCuratedPaidModels.ts");
 
 test("curated OpenRouter paid point discovery adds Jev when bulk /models omits it", async () => {
@@ -53,4 +54,24 @@ test("curated point discovery preserves the healthy bulk catalog when point look
 
 test("OpenRouter point URL builder rejects malformed ids", () => {
   assert.throws(() => buildOpenRouterPointModelUrl("jev-latest"), /Invalid OpenRouter/);
+});
+
+test("free-only OpenRouter import admits Jev but no other paid model", () => {
+  const free = [{ id: "meta-llama/llama-3.2-3b-instruct:free" }];
+  const all = [
+    ...free,
+    {
+      id: "~typesafe/jev-latest",
+      pricing: { prompt: "0.000000042", completion: "0" },
+    },
+    {
+      id: "openai/gpt-5",
+      pricing: { prompt: "0.000001", completion: "0.000001" },
+    },
+  ];
+  const result = mergeOpenRouterCuratedPaidModelsIntoImport(free, all);
+  assert.deepEqual(
+    result.map((model) => model.id),
+    ["meta-llama/llama-3.2-3b-instruct:free", "~typesafe/jev-latest"]
+  );
 });

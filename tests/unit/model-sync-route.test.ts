@@ -1032,3 +1032,58 @@ test("model sync route falls back to in-process discovery when internal self-fet
   assert.equal(fetchCalls[3], "https://api.bltcy.ai/v1/models", "4th call should be upstream");
   assert.equal(fetchCalls.length, 4, "should have exactly 3 retries + 1 upstream call");
 });
+
+test("model sync free-only OpenRouter keeps curated Jev and drops other paid models", async () => {
+  await resetStorage();
+
+  const connection = await providersDb.createProviderConnection({
+    provider: "openrouter",
+    authType: "apikey",
+    name: "Free plus curated paid",
+    apiKey: "test-key",
+    providerSpecificData: { importFreeModelsOnly: true },
+  });
+
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("__readiness_probe__")) return new Response(null, { status: 404 });
+    assert.equal(
+      String(url),
+      `http://127.0.0.1:20128/api/providers/${connection.id}/models?refresh=true&excludeCustom=true`
+    );
+    return Response.json({
+      models: [
+        { id: "meta-llama/llama-3.2-3b-instruct:free", name: "Free Model" },
+        {
+          id: "~typesafe/jev-latest",
+          name: "TypeSafe: Jev Latest",
+          pricing: { prompt: "0.000000042", completion: "0" },
+        },
+        {
+          id: "openai/gpt-5",
+          name: "Paid non-curated",
+          pricing: { prompt: "0.000001", completion: "0.000001" },
+        },
+      ],
+    });
+  };
+
+  try {
+    const response = await modelSyncRoute.POST(
+      new Request(`http://localhost/api/providers/${connection.id}/sync-models`, {
+        method: "POST",
+        headers: scheduler.buildModelSyncInternalHeaders(),
+      }),
+      { params: { id: connection.id } }
+    );
+
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as any;
+    assert.equal(body.importFreeOnly, true);
+    assert.equal(body.freeFilterEmpty, false);
+    const ids = body.importedModels.map((model: { id: string }) => model.id).sort();
+    assert.deepEqual(ids, ["meta-llama/llama-3.2-3b-instruct:free", "~typesafe/jev-latest"].sort());
+    assert.equal(ids.includes("openai/gpt-5"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

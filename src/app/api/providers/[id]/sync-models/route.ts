@@ -6,6 +6,7 @@ import {
   getSyncedAvailableModelsForConnection,
 } from "@/lib/db/models";
 import { selectModelsForImport } from "@/shared/utils/freeModels";
+import { mergeOpenRouterCuratedPaidModelsIntoImport } from "@/lib/catalog/openrouterCuratedPaidModels";
 import {
   importManagedModels,
   type ManagedModelImportMode,
@@ -609,11 +610,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const importFreeOnly = Boolean(
       (connection.providerSpecificData as Record<string, unknown> | undefined)?.importFreeModelsOnly
     );
-    const { models: fetchedModels, freeFilterEmpty } = selectModelsForImport(
-      logProvider,
-      allFetchedModels,
-      importFreeOnly
-    );
+    const freeSelection = selectModelsForImport(logProvider, allFetchedModels, importFreeOnly);
+    const fetchedModels =
+      importFreeOnly && logProvider === "openrouter"
+        ? mergeOpenRouterCuratedPaidModelsIntoImport(freeSelection.models, allFetchedModels)
+        : freeSelection.models;
+    const freeFilterEmpty =
+      importFreeOnly && allFetchedModels.length > 0 ? fetchedModels.length === 0 : false;
     const {
       previousModels,
       previousSyncedAvailableModels,
