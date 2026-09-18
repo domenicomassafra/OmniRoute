@@ -10,9 +10,17 @@
 import fs from "fs";
 import path from "path";
 import { invalidateModelCatalogCache } from "@/lib/db/readCache";
+import {
+  enrichOpenRouterCatalogWithCuratedPaidPointModels,
+  type OpenRouterCatalogModel,
+} from "@/lib/catalog/openrouterCuratedPaidModels";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/models";
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const OPENROUTER_FETCH_HEADERS = {
+  "User-Agent": "OmniRoute/2.0",
+  Accept: "application/json",
+};
 
 function getTTL(): number {
   const env = process.env.OPENROUTER_CATALOG_TTL_MS;
@@ -28,31 +36,7 @@ function getCacheFilePath(): string {
   return path.join(cacheDir, "openrouter-catalog.json");
 }
 
-interface CatalogEntry {
-  id: string;
-  name?: string;
-  description?: string;
-  context_length?: number;
-  pricing?: {
-    prompt?: string;
-    completion?: string;
-    image?: string;
-    request?: string;
-  };
-  top_provider?: {
-    max_completion_tokens?: number;
-    is_moderated?: boolean;
-  };
-  architecture?: {
-    modality?: string;
-    input_modalities?: string[];
-    output_modalities?: string[];
-    tokenizer?: string;
-    instruct_type?: string;
-  };
-  supported_parameters?: string[];
-  created?: number;
-}
+type CatalogEntry = OpenRouterCatalogModel;
 
 interface CacheFile {
   fetchedAt: string;
@@ -88,10 +72,7 @@ function writeCache(data: CatalogEntry[]): void {
 /** Fetch fresh catalog from OpenRouter API. */
 async function fetchFromAPI(): Promise<CatalogEntry[]> {
   const res = await fetch(OPENROUTER_API_URL, {
-    headers: {
-      "User-Agent": "OmniRoute/2.0",
-      Accept: "application/json",
-    },
+    headers: OPENROUTER_FETCH_HEADERS,
     signal: AbortSignal.timeout(15_000),
   });
 
@@ -101,7 +82,14 @@ async function fetchFromAPI(): Promise<CatalogEntry[]> {
 
   const json = (await res.json()) as { data?: CatalogEntry[] };
   const models = Array.isArray(json.data) ? json.data : [];
-  return models;
+  return enrichOpenRouterCatalogWithCuratedPaidPointModels(models, async (url) => {
+    const pointResponse = await fetch(url, {
+      headers: OPENROUTER_FETCH_HEADERS,
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!pointResponse.ok) return null;
+    return pointResponse.json();
+  });
 }
 
 /**

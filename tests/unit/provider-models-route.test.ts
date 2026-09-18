@@ -548,9 +548,20 @@ test("provider models route prefers the remote OpenRouter /models API over stati
   const seenUrls = [];
 
   globalThis.fetch = async (url, init = {}) => {
-    seenUrls.push(String(url));
+    const target = String(url);
+    seenUrls.push(target);
     assert.equal(init.method, "GET");
     assert.equal(init.headers.Authorization, "Bearer openrouter-key");
+    if (target === "https://openrouter.ai/api/v1/model/~typesafe/jev-latest") {
+      return Response.json({
+        data: {
+          id: "~typesafe/jev-latest",
+          name: "TypeSafe: Jev Latest",
+          context_length: 32000,
+          pricing: { prompt: "0.000000042", completion: "0" },
+        },
+      });
+    }
     return Response.json({
       data: [{ id: "openai/gpt-4.1", name: "GPT-4.1 via OpenRouter" }],
     });
@@ -561,13 +572,20 @@ test("provider models route prefers the remote OpenRouter /models API over stati
 
   assert.equal(response.status, 200);
   assert.equal(body.source, "api");
-  assert.deepEqual(seenUrls, ["https://openrouter.ai/api/v1/models"]);
+  assert.deepEqual(seenUrls, [
+    "https://openrouter.ai/api/v1/models",
+    "https://openrouter.ai/api/v1/model/~typesafe/jev-latest",
+  ]);
   // #6976 — OpenRouter's live /v1/models never lists embeddings/rerank (they live
   // on dedicated endpoints), so the curated specialty catalog is folded into the
   // live-discovery response additively; static IMAGE models stay excluded
   // (hasChatRegistry is true for openrouter — see staticModels.ts).
   const ids = body.models.map((m: { id: string }) => m.id);
   assert.ok(ids.includes("openai/gpt-4.1"), "live-fetched chat model is preserved");
+  assert.ok(
+    ids.includes("~typesafe/jev-latest"),
+    "curated paid Jev alias omitted by bulk /models is point-discovered"
+  );
   assert.ok(ids.includes("baai/bge-m3"), "curated embedding is merged in");
   assert.ok(ids.includes("cohere/rerank-v3.5"), "curated rerank is merged in");
   assert.ok(

@@ -98,7 +98,7 @@ function restoreRealFetch(): void {
   globalThis.fetch = REAL_FETCH;
 }
 
-test("warmModelCatalogCache warms the OpenRouter catalog once, and a real request with a different apiKey reuses it", async () => {
+test("warmModelCatalogCache warms OpenRouter bulk + curated point catalogs once, and real requests reuse them", async () => {
   await resetStorage();
   installFakeOpenRouterFetch();
   try {
@@ -111,7 +111,11 @@ test("warmModelCatalogCache warms the OpenRouter catalog once, and a real reques
     });
 
     await warmModelCatalogCache();
-    assert.equal(fetchCallCount, 1, "warmup should fetch the OpenRouter catalog exactly once");
+    assert.equal(
+      fetchCallCount,
+      2,
+      "warmup should fetch OpenRouter bulk plus the missing curated paid point model exactly once"
+    );
 
     // A real client authenticating with a DIFFERENT apiKey than the warmup's
     // anonymous request must NOT re-trigger the network fetch — this is the
@@ -123,7 +127,7 @@ test("warmModelCatalogCache warms the OpenRouter catalog once, and a real reques
     await (await getUnifiedModelsResponse(realReq)).text();
     assert.equal(
       fetchCallCount,
-      1,
+      2,
       "a real request with a different apiKey should reuse the warmed OpenRouter cache, not re-fetch"
     );
   } finally {

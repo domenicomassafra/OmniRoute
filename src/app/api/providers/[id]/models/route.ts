@@ -9,6 +9,7 @@ import { getRegistryEntry } from "@omniroute/open-sse/config/providerRegistry.ts
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { resolveAlibabaProviderModelsUrl } from "@/shared/constants/alibabaProviderRegions";
 import { getStaticModelsForProvider } from "@/lib/providers/staticModels";
+import { enrichOpenRouterCatalogWithCuratedPaidPointModels } from "@/lib/catalog/openrouterCuratedPaidModels";
 import { providerUsesCuratedModelsOnly } from "@/lib/providers/modelListingCapability";
 import { mergeModelsWithCustomPrecedence } from "@/lib/providers/modelMetadataPrecedence";
 import { getCachedProviderConnectionById } from "@/lib/db/readCache";
@@ -2369,6 +2370,22 @@ export async function GET(
     if (pageCount > 1) {
       console.log(
         `[models] ${provider}: fetched ${allModels.length} models across ${pageCount} pages`
+      );
+    }
+
+    if (provider === "openrouter") {
+      allModels = await enrichOpenRouterCatalogWithCuratedPaidPointModels(
+        allModels,
+        async (pointUrl) => {
+          const response = await safeOutboundFetch(pointUrl, {
+            ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
+            guard: getProviderOutboundGuard(),
+            proxyConfig: proxy,
+            ...fetchOptions,
+          });
+          if (!response.ok) return null;
+          return response.json();
+        }
       );
     }
 

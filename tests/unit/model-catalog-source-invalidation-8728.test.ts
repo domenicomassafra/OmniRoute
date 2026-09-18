@@ -187,6 +187,42 @@ test("feature flag writes invalidate catalog version only for catalog-relevant o
   assert.equal(catalogVersion(), clearNoRelevantBefore);
 });
 
+test("OpenRouter catalog point-discovers curated paid Jev when bulk /models omits it", async () => {
+  const seenUrls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const target = String(input instanceof Request ? input.url : input);
+    seenUrls.push(target);
+    if (target === "https://openrouter.ai/api/v1/models") {
+      return Response.json({ data: [{ id: "openai/gpt-4.1", name: "GPT-4.1" }] });
+    }
+    if (target === "https://openrouter.ai/api/v1/model/~typesafe/jev-latest") {
+      return Response.json({
+        data: {
+          id: "~typesafe/jev-latest",
+          name: "TypeSafe: Jev Latest",
+          context_length: 32000,
+          pricing: { prompt: "0.000000042", completion: "0" },
+        },
+      });
+    }
+    return new Response("unexpected URL", { status: 404 });
+  }) as typeof fetch;
+
+  try {
+    const result = await openRouterCatalog.getOpenRouterCatalog();
+    assert.deepEqual(seenUrls, [
+      "https://openrouter.ai/api/v1/models",
+      "https://openrouter.ai/api/v1/model/~typesafe/jev-latest",
+    ]);
+    assert.ok(result.data.some((model) => model.id === "openai/gpt-4.1"));
+    const jev = result.data.find((model) => model.id === "~typesafe/jev-latest");
+    assert.equal(jev?.name, "TypeSafe: Jev Latest");
+    assert.equal(jev?.context_length, 32000);
+  } finally {
+    restoreRealFetch();
+  }
+});
+
 test("refreshOpenRouterCatalog invalidates only on success", async () => {
   installMockOpenRouterFetch({ data: [{ id: "openrouter/fake", source: "test" }] });
   try {
